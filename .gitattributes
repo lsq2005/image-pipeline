@@ -1,0 +1,6 @@
+# 统一换行符，避免 Windows/Linux 混用
+*.md text eol=lf
+*.py text eol=lf
+*.txt text eol=lf
+*.ipynb text eol=lf
+*.png binary

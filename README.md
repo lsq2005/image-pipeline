@@ -52,7 +52,7 @@ graph TB
     end
 
     subgraph "💾 6. 标准化输出"
-        C4 --> F1["UDF: Resize 224×224<br/>PIL Image.LANCZOS"]
+        E3 --> F1["UDF: Resize 224×224<br/>PIL Image.LANCZOS"]
         F1 --> F2["提取 label 列<br/>cat_001.jpg → cat"]
         F2 --> F3["write.parquet()<br/>path | label | sharpness | phash | image_data"]
         F3 --> F4["✅ 最终产物<br/>495 条记录 · Parquet 格式"]
@@ -119,8 +119,9 @@ image-pipeline/
 ├── LICENSE                                 # MIT
 ├── .gitignore
 ├── data/
-│   ├── raw/.gitkeep                        # 原始图片存放目录
-│   └── output/.gitkeep                     # Parquet 输出目录
+│   ├── raw/.gitkeep                        # 原始图片目录（从Kaggle下载后放这里）
+│   └── output/.gitkeep                     # Parquet输出目录（管道运行后生成）
+│                                           # 💡 注：数据本身存于HDFS，不随Git上传
 ├── notebooks/                              # Jupyter Notebook（学习路径）
 │   ├── 01_Spark_DataFrame基础练习.ipynb        ← CSV读写、Parquet、分布式验证
 │   ├── 02_图像初次处理_测试版.ipynb             ← 14图→500图，binaryFile、pHash、自连接
@@ -145,34 +146,75 @@ image-pipeline/
 
 ### 环境要求
 
-- Hadoop 3.x + Spark 3.x 集群
-- Python 3.10+
-- 所有节点安装：`Pillow`、`imagehash`、`opencv-python`
+| 组件 | 版本 | 说明 |
+|------|------|------|
+| Java | JDK 11 | Hadoop/Spark 运行在 JVM 上 |
+| Hadoop | 3.3.6 | HDFS + YARN，三节点集群 |
+| Spark | 3.5.5 | PySpark on YARN，每个 Executor 分配 2GB |
+| Python | 3.10+ | 所有节点（Master + Worker）必须统一版本 |
+| 操作系统 | Ubuntu 22.04 LTS | 本项目实际环境 |
+| 集群节点 | 3 台（1 Master + 2 Worker） | 阿里云 ECS，每台 4vCPU 8GB |
+
+### 安装依赖
+
+```bash
+# 在所有节点（Master + 所有 Worker）上执行
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+```
+
+> ⚠️ **关键**：`Pillow`、`opencv-python`、`imagehash` 必须在**每个 Worker 节点**上都安装。UDF 在 Executor 上执行，Master 单独装没用。
+
+### 准备数据
+
+```bash
+# 1. 下载完整数据集（25000 张猫狗图片）
+kaggle datasets download -d shaunthesheep/microsoft-catsvsdogs-dataset --unzip
+
+# 2. 采样 500 张（猫 250 + 狗 250）作为实验子集
+#    原始数据解压后在 PetImages/Cat/ 和 PetImages/Dog/ 目录下
+mkdir -p data/raw
+cp PetImages/Cat/*.jpg data/raw/cat_*.jpg 2>/dev/null | head -250
+cp PetImages/Dog/*.jpg data/raw/dog_*.jpg 2>/dev/null | head -250
+
+# 3. 上传到 HDFS
+hdfs dfs -mkdir -p /user/root/image-pipeline/input/
+hdfs dfs -put data/raw/*.jpg /user/root/image-pipeline/input/
+```
+
+### 启动集群
+
+```bash
+start-dfs.sh && start-yarn.sh
+yarn node -list    # 确认 2 个 NodeManager 为 RUNNING
+jps                # Master 应有 NameNode、SecondaryNameNode、ResourceManager
+```
 
 ### 运行管道
 
 ```bash
-# 1. 启动集群
-start-dfs.sh && start-yarn.sh
-
-# 2. 下载数据
-kaggle datasets download -d shaunthesheep/microsoft-catsvsdogs-dataset --unzip
-
-# 3. 上传到 HDFS
-hdfs dfs -put *.jpg /user/root/image-pipeline/input/
-
-# 4. 启动 Jupyter Lab
 jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
-
-# 5. 打开 notebooks/04_完整清洗管道_Resize224_封板.ipynb
-#    依次运行所有 Cell
+# 打开 notebooks/04_完整清洗管道_Resize224_封板.ipynb，依次运行所有 Cell
 ```
 
 ### 读取处理结果
 
 ```python
 df = spark.read.parquet("/user/root/image-pipeline/output/cleaned_images_224.parquet")
-df.select("label", "sharpness").show(5)
+df.printSchema()
+# root
+#  |-- path: string
+#  |-- label: string       ← cat 或 dog
+#  |-- sharpness: float    ← 清晰度分数
+#  |-- phash: string       ← 感知哈希指纹
+#  |-- image_data: binary  ← 224×224 JPEG 字节
+
+df.groupBy("label").count().show()
+# +-----+-----+
+# |label|count|
+# +-----+-----+
+# |  cat|  248|
+# |  dog|  247|
+# +-----+-----+
 ```
 
 ---
