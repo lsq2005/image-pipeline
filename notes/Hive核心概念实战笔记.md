@@ -1,83 +1,62 @@
-# Hive 核心概念实战笔记
+# Hive 实战笔记
 
-> 2026.06.14 | 我在 Spark SQL 上跑 HiveQL 的动手记录
-
----
-
-## 一、Hive 是什么？我怎么理解的
-
-**Hive 不是一个数据库，它是一个 SQL 翻译器。** 我第一次学这个概念的时候被绕了很久——原来 Hive 自己既不存数据，也不算数据。它只是把我的 SQL 翻译成 Spark 能看懂的代码，然后扔给 Spark 去跑。数据一直存在 HDFS 上，计算是 Spark 干的，Hive 只做了一个翻译官。
-
-我看到最形象的一个类比是：我出国旅游，不懂当地语言，雇了个翻译。我说中文，翻译转成当地话，司机才开车带我去目的地。Hive 就是这个翻译——它不造车、不修路、不开车。
-
-MetaStore 翻译过来就是"档案室"——存着"哪张表对应 HDFS 哪个路径"这一张映射表。我去 `DESCRIBE EXTENDED` 看了一下，确实这么回事。
+> 2026.06.14 | Spark SQL + Hive 动手记录
 
 ---
 
-## 二、内部表 vs 外部表——我亲手验证过的
+## 一、Hive 是什么
 
-我今天做了个实验，搞懂了这两个概念的区别：
+Hive 是 SQL 到 MapReduce/Spark 的翻译层。
 
-| | 内部表 (MANAGED) | 外部表 (EXTERNAL) |
+- 数据存在 HDFS，不是 Hive 自己的存储
+- 计算由 Spark 或 MapReduce 执行，不是 Hive 自己的引擎
+- MetaStore 存的是「表名→HDFS 路径」的映射，相当于档案室
+
+类比：Hive 是个翻译官——把 SQL 翻译成 Spark 能执行的代码，自己既不存数据也不算数据。
+
+---
+
+## 二、内部表 vs 外部表
+
+| | 内部表 (MANAGED TABLE) | 外部表 (EXTERNAL TABLE) |
 |------|------|------|
-| 数据归谁管？ | Hive | **我** |
-| 我 DROP TABLE 之后 | 💥 数据文件跟着没了 | ✅ 数据还在 HDFS 上 |
-| 数据放哪？ | Hive 默认仓库 `/user/hive/warehouse/` | 我指定的任意路径 |
-| 什么场景用？ | Hive 自己的临时表、中间结果 | **别人生成好的数据，我只想用 SQL 查**（我的场景） |
+| 数据生命周期 | Hive 管理 | 用户自己管理 |
+| DROP TABLE | 元数据 + HDFS 数据一起删 | 只删元数据，HDFS 文件不动 |
+| 数据默认路径 | `/user/hive/warehouse/` | 任意路径 |
+| 适用场景 | Hive 自己的中间表 | 已有数据文件，只需 SQL 查询入口 |
 
-**我的实验过程**：我用自己管道产出的 Parquet 文件建了一个 EXTERNAL TABLE，然后跑了 DROP TABLE，再跑 `SHOW TABLES`——表没了。但我用 `hdfs dfs -ls` 去查——16 个 part-*.snappy.parquet 文件一个不少。这就是"删表不删数据"的物理证据。
+**验证实验**：用管道产出的 Parquet 建了 EXTERNAL TABLE → DROP TABLE → `SHOW TABLES` 空了 → `hdfs dfs -ls` 下 16 个 Parquet 文件完好。
 
-**为什么我要用外部表？** 因为这个 Parquet 是我的 PySpark 管道花了集群资源辛辛苦苦生成的，Hive 只是一个 SQL 查询入口。我不能让 Hive 的 DROP TABLE 把我的数据文件一起扬了。
-
----
-
-## 三、我管道的输出数据，对应数仓哪一层？
-
-我今天对照着自己 500→495→495 的管道流程，把四层结构对号入座了：
-
-| 数仓层 | 全称 | 在我管道里是什么 |
-|--------|------|-----------------|
-| ODS | Operational Data Store | Kaggle 下载下来的 500 张原始猫狗图，什么都没动 |
-| **DWD** | **Data Warehouse Detail** | **我过滤掉 5 张模糊图、跑完去重后的 495 条记录——这就是我的管道输出，DWD 层** |
-| DWS | Data Warehouse Summary | 我按 label 分组做了 `GROUP BY`，统计猫 248 狗 247——这是一张 DWS 的聚合表雏形 |
-| ADS | Application Data Service | 下游如果要拿我的数据训练分类模型，直接取 DWD 层 Parquet，image_data + label 拿来就用 |
-
-**我自己一句话记**：我的 Parquet 输出 = DWD 层——已清洗的明细数据，还不是报表，但已经能直接给下游用了。
+**为什么用外部表**：Parquet 是 PySpark 管道生成的，Hive 只是查询入口。DROP TABLE 不应该删数据。
 
 ---
 
-## 四、Hive 和 Spark SQL 到底什么关系？我搞清楚了
+## 三、管道数据对应数仓分层
 
-之前我一直在纠结这个问题——我在 PySpark 里也能写 `spark.sql()`，那还要 Hive 干什么？
+| 层 | 全称 | 在我的管道里 |
+|------|------|-------------|
+| ODS | Operational Data Store | Kaggle 下载的原始图片，未经处理 |
+| **DWD** | **Data Warehouse Detail** | **清洗后的 495 条记录（清晰度→去重→224×224）** |
+| DWS | Data Warehouse Summary | 按 label 聚合（`GROUP BY label` 统计猫狗数量） |
+| ADS | Application Data Service | 下游模型训练直接取用的最终数据 |
 
-我现在搞清楚了：
-
-- Spark SQL 可以用 Hive 的 MetaStore 来管理表结构。我今天在 PySpark 里写 `CREATE EXTERNAL TABLE`，这个表名、列名、路径信息就是通过 Hive 的 MetaStore 存下来的
-- 反过来，Hive 也可以不自己跑计算，而让 Spark 去跑（Hive on Spark 模式）
-- 我的项目是：**Spark 生产数据 → Hive MetaStore 登记表结构 → 用 SQL 查询**
-- 这俩不冲突——MetaStore 是档案室，Spark 是工厂，我一个负责造东西，一个负责登记和查找
-
-在代码里加 `enableHiveSupport()` 这行，就是告诉 Spark："嘿，帮我连一下 Hive 的 MetaStore，我可能需要建表、查表。"
+管道输出 = DWD 层。
 
 ---
 
-## 五、我真正跑出来的数据发现
+## 四、Hive 和 Spark SQL 的关系
 
-今天用 SQL 查猫狗清晰度对比，我发现了一个有意思的点：
+- Spark SQL 通过 `enableHiveSupport()` 连接 Hive 的 MetaStore，可以建表、查表
+- Hive 的查询引擎可替换为 Spark（Hive on Spark 模式）
+- 本项目的分工：Spark 负责管道的计算和数据生成，Hive MetaStore 负责表结构的登记和 SQL 查询
+
+---
+
+## 五、数据观察
 
 | 类别 | 数量 | 平均清晰度 |
 |------|------|-----------|
-| Cat（猫） | 248 | 973 |
-| Dog（狗） | 247 | 1443 |
+| Cat | 248 | 973 |
+| Dog | 247 | 1443 |
 
-狗的平均清晰度比猫高了近 50%。我猜是因为这个数据集里狗的照片更多在户外拍的（光线好、对焦稳），猫的很多在室内（光线暗、容易糊）。这个不是我代码的问题，是数据本身的特性。
-
-面试的时候提到这个发现，说明我不只是跑了管道——我看了数据，想了为什么。
-
----
-
-## 六、面试我打算这样说
-
-> "我的项目里，PySpark 管道产出清洗后的 Parquet 文件。我用 Hive 的 EXTERNAL TABLE 登记了这份数据——外部表删表不删数据，我亲手做过实验验证。我的管道输出对应数仓的 DWD 层——已清洗的明细数据，下游 CV 模型训练可以直接用。
->
-> 通过 SQL 分析数据时，我发现了一个有意思的现象：狗的图片平均清晰度比猫高 50%，我推测和拍摄环境有关——狗图更多在户外，猫图更多在室内。这说明我不仅仅跑通了管道，还真正看过数据、分析过数据。"
+狗的平均清晰度比猫高约 50%。推测原因：此数据集中狗的照片更多在户外拍摄，光线和对焦条件更好。
