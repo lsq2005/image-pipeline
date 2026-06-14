@@ -1,0 +1,19 @@
+# PySpark 分布式图像清洗管道 - 依赖包
+
+# ===== 核心依赖 =====
+pyspark>=3.5.0
+
+# ===== 图像处理 =====
+Pillow>=10.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# ===== 感知哈希 =====
+imagehash>=4.3.0
+
+# ===== 数据获取（Kaggle API）=====
+kaggle>=1.6.0
+
+# ===== 可选：数据分析增强 =====
+# pandas>=2.0.0        # DataFrame 本地调试（通常已随 PySpark 安装）
+# matplotlib>=3.7.0    # 清晰度分布可视化

@@ -114,20 +114,29 @@ graph TB
 
 ```
 image-pipeline/
-├── notebooks/                          # Jupyter Notebook（学习路径）
-│   ├── 01_Spark_DataFrame基础练习.ipynb     ← CSV读写、Parquet、分布式验证
-│   ├── 02_图像初次处理_测试版.ipynb         ← 14图→500图，binaryFile、pHash、自连接
-│   ├── 03_完整清洗管道_W3版本.ipynb         ← W3周日，清晰度→去重→Parquet（无Resize）
-│   └── 04_完整清洗管道_Resize224_封板.ipynb  🔒 最终封板版（含Resize+label）
-├── notes/
-│   ├── 前置知识-W3周二-扩充版.md
-│   ├── 前置知识-W3周三-扩充版.md
-│   └── 前置知识-W3周日-扩充版.md
-├── screenshots/
-│   ├── 1-yarn-active-nodes.png
-│   ├── 3-spark-jobs-list.png
-│   └── 4-executor-hosts-master-worker1-worker2.png
-└── README.md
+├── README.md                               # 项目说明（含架构流程图）
+├── requirements.txt                        # Python 依赖（Pillow/OpenCV/imagehash/PySpark）
+├── LICENSE                                 # MIT
+├── .gitignore
+├── data/
+│   ├── raw/.gitkeep                        # 原始图片存放目录
+│   └── output/.gitkeep                     # Parquet 输出目录
+├── notebooks/                              # Jupyter Notebook（学习路径）
+│   ├── 01_Spark_DataFrame基础练习.ipynb        ← CSV读写、Parquet、分布式验证
+│   ├── 02_图像初次处理_测试版.ipynb             ← 14图→500图，binaryFile、pHash、自连接
+│   ├── 03_完整清洗管道_W3版本.ipynb             ← W3周日，清晰度→去重→Parquet（无Resize）
+│   └── 04_完整清洗管道_Resize224_封板.ipynb     🔒 最终封板版（含Resize+label）
+├── docs/
+│   └── 集群操作手册.md                      # 阿里云ECS启动/关闭/常用命令
+├── notes/                                  # 理论学习笔记
+│   ├── 前置知识-W3周二-扩充版.md              # SparkSession、DataFrame、HDFS架构、Catalyst优化器
+│   ├── 前置知识-W3周三-扩充版.md              # binaryFile、UDF、pHash、汉明距离、自连接去重
+│   ├── 前置知识-W3周日-扩充版.md              # 拉普拉斯清晰度、Kaggle API、阈值方法论、管道设计
+│   └── Harness概念理解.md                   # Prompt→Context→Harness、CNN类比、面试话术
+└── screenshots/                            # 集群运行截图
+    ├── 1-yarn-active-nodes.png             # YARN 活跃节点（证明2个Worker在运行）
+    ├── 3-spark-jobs-list.png               # Spark 任务列表
+    └── 4-executor-hosts-master-worker1-worker2.png  # Executor 分布（证明分布式执行）
 ```
 
 ---
